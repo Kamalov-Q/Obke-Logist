@@ -70,42 +70,35 @@ export class TasksController {
 
     // UPDATE TASK STATUS
     @Patch(':id/status')
-
     @ApiOperation({
-        summary:
-            'Employee updates task status',
+        summary: 'Employee updates task status',
     })
-
     @ApiParam({
         name: 'id',
-        example:
-            'uuid',
+        example: 'uuid',
     })
-
     @ApiBody({
-        type:
-            UpdateTaskStatusDto,
+        type: UpdateTaskStatusDto,
     })
-
     updateTaskStatus(
-
-        @Param('id')
-        id: string,
-
-        @Body()
-        dto:
-            UpdateTaskStatusDto,
-
-        @CurrentUser()
-        req: AuthenticatedUser,
+        @Param('id') id: string,
+        @Body() dto: UpdateTaskStatusDto,
+        @CurrentUser() req: AuthenticatedUser,
     ) {
+        return this.tasksService.updateTaskStatus(
+            id,
+            dto.status,
+            req.id,
+            dto.completionDescription,
+            dto.completionLink,
+        );
+    }
 
-        return this.tasksService
-            .updateTaskStatus(
-                id,
-                dto.status,
-                req.id,
-            );
+    // GET SINGLE TASK
+    @Get(':id')
+    @ApiOperation({ summary: 'Get single task instance details' })
+    findOne(@Param('id') id: string) {
+        return this.tasksService.findOne(id);
     }
 
     // VERIFY TASK
@@ -147,18 +140,20 @@ export class TasksController {
     })
 
     rejectTask(
-
         @Param('id')
         id: string,
+
+        @Body('reason')
+        reason: string,
 
         @CurrentUser()
         req: AuthenticatedUser,
     ) {
-
         return this.tasksService
             .rejectTask(
                 id,
                 req.id,
+                reason,
             );
     }
 
@@ -215,5 +210,13 @@ export class TasksController {
             .getDirectorDashboard(
                 req.id,
             );
+    }
+
+    @Get('template/:templateId/instances')
+    @ApiOperation({
+        summary: 'Get all task instances for a specific template (daily logs)'
+    })
+    getTemplateInstances(@Param('templateId') templateId: string) {
+        return this.tasksService.getTemplateInstances(templateId);
     }
 }

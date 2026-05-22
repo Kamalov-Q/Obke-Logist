@@ -78,8 +78,8 @@ export class TasksCron {
 
         const tasks = await this.taskRepo.find({
             where: {
-                dueDate: today,
-                status: In([TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.PENDING])
+                dueDate: LessThanOrEqual(today),
+                status: In([TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.PENDING, TaskStatus.REJECTED])
             }
         });
 

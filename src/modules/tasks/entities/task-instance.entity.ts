@@ -8,14 +8,12 @@ export class TaskInstance {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @ManyToOne(() => TaskTemplate, {
-        onDelete: 'CASCADE'
-    })
-    @JoinColumn({ name: 'templateId' })
-    template: TaskTemplate;
-
     @Column()
     templateId: string;
+
+    @ManyToOne(() => TaskTemplate)
+    @JoinColumn({ name: 'templateId' })
+    template: TaskTemplate;
 
     @Index()
     @Column()
@@ -36,6 +34,21 @@ export class TaskInstance {
 
     @CreateDateColumn()
     createdAt: Date;
+
+    @Column({ type: 'text', nullable: true })
+    completionDescription?: string;
+
+    @Column({ type: 'text', nullable: true })
+    completionLink?: string;
+
+    @Column({ type: 'text', nullable: true })
+    rejectionReason?: string;
+
+    @Column({ type: 'timestamp', nullable: true })
+    completedAt?: Date;
+
+    @Column({ type: 'timestamp', nullable: true })
+    approvedAt?: Date;
 
 
 }

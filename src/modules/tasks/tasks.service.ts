@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { TaskTemplate } from "./entities/task-template.entity";
-import { DataSource, Repository } from "typeorm";
+import { DataSource, Repository, LessThan, In, LessThanOrEqual } from "typeorm";
 import { TaskInstance } from "./entities/task-instance.entity";
 import { TaskStatusHistory } from "./entities/task-status-history.entity";
 import { Notification } from "./entities/notification.entity";
@@ -94,6 +94,27 @@ export class TasksService {
         
         const todayStart = new Date(`${tzDateStr}T00:00:00.000Z`);
 
+        let currentDay = new Date(startDay);
+        const instancesToCreate: any[] = [];
+        while (currentDay <= endDay) {
+            const tempStart = new Date(currentDay);
+            tempStart.setHours(0,0,0,0);
+            
+            const expires = new Date(currentDay);
+            expires.setHours(23,59,59,999);
+
+            instancesToCreate.push({
+                templateId: saved.id,
+                assignedTo: saved.assignedTo,
+                dueDate: tempStart,
+                expiresAt: expires,
+                status: TaskStatus.TODO
+            });
+            currentDay.setDate(currentDay.getDate() + 1);
+        }
+        const instances = this.taskRepo.create(instancesToCreate);
+        await this.taskRepo.save(instances);
+
         if (todayDate >= startDay && todayDate <= endDay) {
             const isToday = todayStart.getTime() === startDay.getTime();
             const currentTime = todayDate.toLocaleTimeString('en-GB', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit' });
@@ -101,7 +122,7 @@ export class TasksService {
             if (!isToday || currentTime >= dto.notifyAt) {
                 await this.taskQueue.add(
                     'generate-task',
-                    { templateId: saved.id, isCron: false },
+                    { templateId: saved.id, isCron: false, isCreation: true },
                     { attempts: 3 }
                 );
             }
@@ -110,11 +131,22 @@ export class TasksService {
         return saved;
     }
 
+    async findOne(id: string) {
+        const task = await this.taskRepo.findOne({
+            where: { id },
+            relations: ['template'],
+        });
+        if (!task) throw new NotFoundException('Task not found');
+        return task;
+    }
+
     // Update task status
     async updateTaskStatus(
         taskId: string,
         newStatus: TaskStatus,
-        userId: string
+        userId: string,
+        completionDescription?: string,
+        completionLink?: string,
     ) {
 
         const user = await this.usersRepo.findOne({
@@ -144,8 +176,13 @@ export class TasksService {
 
                 const oldStatus = task.status;
 
-                // Validations
-                //employee cannot directly set DONE
+                // === Terminal state check ===
+                // Once DONE (approved) or INCOMPLETE (cron at 11:59 PM), the task cannot be changed
+                if (oldStatus === TaskStatus.DONE || oldStatus === TaskStatus.INCOMPLETE) {
+                    throw new BadRequestException('Task is already finalized and cannot be changed');
+                }
+
+                // Employee cannot set DONE directly – director must approve
                 if (newStatus === TaskStatus.DONE) {
                     throw new BadRequestException('Director verification required');
                 }
@@ -156,14 +193,20 @@ export class TasksService {
                     }
                 }
 
-                // Must start first
+                // To submit (PENDING), the task must have been started or was previously rejected
                 if (newStatus === TaskStatus.PENDING) {
-                    if (task.status !== TaskStatus.IN_PROGRESS) {
-                        throw new BadRequestException('Task must be in progress first');
+                    if (task.status !== TaskStatus.IN_PROGRESS && task.status !== TaskStatus.REJECTED) {
+                        throw new BadRequestException('Task must be in progress or rejected to submit');
                     }
                 }
 
                 task.status = newStatus;
+
+                if (newStatus === TaskStatus.PENDING) {
+                    task.completionDescription = completionDescription;
+                    task.completionLink = completionLink;
+                    task.completedAt = new Date();
+                }
 
                 await manager.save(task);
 
@@ -242,6 +285,7 @@ export class TasksService {
             const oldStatus = task.status;
 
             task.status = TaskStatus.DONE;
+            task.approvedAt = new Date();
 
             await manager.save(task);
 
@@ -287,7 +331,8 @@ export class TasksService {
     // Reject task
     async rejectTask(
         taskId: string,
-        directorId: string
+        directorId: string,
+        reason?: string,
     ) {
         return this.dataSource.transaction(async manager => {
             const task = await manager.findOne(TaskInstance, {
@@ -306,6 +351,8 @@ export class TasksService {
             const oldStatus = task.status;
 
             task.status = TaskStatus.REJECTED;
+            task.rejectionReason = reason;
+            task.approvedAt = new Date();
 
             await manager.save(task);
 
@@ -358,11 +405,34 @@ export class TasksService {
         });
     }
 
+    async markPastTasksIncomplete() {
+        const tzDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+        const today = new Date(`${tzDateStr}T00:00:00.000Z`);
+
+        const expired = await this.taskRepo.find({
+            where: {
+                dueDate: LessThan(today),
+                status: In([TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.REJECTED])
+            }
+        });
+
+        for (const task of expired) {
+            await this.taskQueue.add('mark-incomplete', { taskId: task.id }, { attempts: 2 });
+            task.status = TaskStatus.INCOMPLETE;
+        }
+    }
+
     // Employee Tasks
     async getEmployeeTasks(employeeId: string) {
+        await this.markPastTasksIncomplete();
+
+        const tzDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+        const today = new Date(`${tzDateStr}T00:00:00.000Z`);
+
         const tasks = await this.taskRepo.find({
             where: {
-                assignedTo: employeeId
+                assignedTo: employeeId,
+                dueDate: LessThanOrEqual(today)
             },
             relations: ['template'],
             order: {
@@ -372,13 +442,11 @@ export class TasksService {
 
         const now = new Date();
         const currentTime = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit' });
-        const todayD = new Date();
-        todayD.setHours(0,0,0,0);
 
         return tasks.filter(t => {
             const taskD = new Date(t.dueDate);
-            taskD.setHours(0,0,0,0);
-            if (taskD.getTime() === todayD.getTime()) {
+            const isToday = taskD.getTime() === today.getTime();
+            if (isToday) {
                 if (t.template?.notifyAt && t.template.notifyAt > currentTime) {
                     return false;
                 }
@@ -389,16 +457,30 @@ export class TasksService {
 
     // Director dashboard
     async getDirectorDashboard(directorId: string) {
+        await this.markPastTasksIncomplete();
+
+        const tzDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+        const today = new Date(`${tzDateStr}T00:00:00.000Z`);
+
         return this.taskRepo.find({
             relations: ['template'],
             where: {
                 template: {
                     createdBy: directorId,
-                }
+                },
+                dueDate: LessThanOrEqual(today)
             },
             order: {
                 createdAt: 'DESC'
             }
         })
+    }
+
+    // Get all instances for a template
+    async getTemplateInstances(templateId: string) {
+        return this.taskRepo.find({
+            where: { templateId },
+            order: { dueDate: 'ASC' }
+        });
     }
 }

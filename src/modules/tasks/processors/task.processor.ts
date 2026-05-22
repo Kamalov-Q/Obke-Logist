@@ -84,7 +84,7 @@ export class TasksProcessor extends WorkerHost {
         });
 
         if (existing) {
-            if (data.isCron) {
+            if (data.isCron || data.isCreation) {
                 await this.notificationRepo.save({
                     userId: template.assignedTo,
                     type: NotificationType.TASK_CREATED,
@@ -173,8 +173,7 @@ export class TasksProcessor extends WorkerHost {
 
             if (
                 task.status === TaskStatus.DONE ||
-                task.status === TaskStatus.INCOMPLETE ||
-                task.status === TaskStatus.REJECTED
+                task.status === TaskStatus.INCOMPLETE
             ) {
                 return;
             }
