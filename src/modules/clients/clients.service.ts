@@ -10,6 +10,9 @@ import { Department } from '../departments/entites/department.entity';
 import { ClientStage, SaleStatus } from './enums/client.enums';
 import { AuthenticatedUser } from 'src/common/types/auth-request.type';
 import { ActivityLog } from '../archive/entities/activity-log.entity';
+import { ClientsGateway } from './gateways/clients.gateway';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { LessThanOrEqual, IsNull } from 'typeorm';
 
 @Injectable()
 export class ClientsService {
@@ -29,6 +32,8 @@ export class ClientsService {
         @InjectRepository(ActivityLog)
         private readonly activityRepo: Repository<ActivityLog>,
 
+        private readonly clientsGateway: ClientsGateway,
+
         private readonly dataSource: DataSource,
     ) { }
 
@@ -44,7 +49,9 @@ export class ClientsService {
         });
 
         const saved = await this.clientRepo.save(client);
-        
+
+        this.clientsGateway.emitClientUpdate(saved.id, saved);
+
         await this.activityRepo.save({
             actionType: 'CLIENT_CREATED',
             details: { clientId: saved.id, fullName: saved.fullName }
@@ -81,11 +88,46 @@ export class ClientsService {
             if (!dep) throw new BadRequestException('Department not found');
         }
         Object.assign(client, dto);
+
+        // If the stage is changing away from NEW/IN_PROGRESS, we typically end the call, but let's clear call fields if stage goes to NO_ANSWER, TALKED, or SOLD
+        if (dto.stage && dto.stage !== ClientStage.NEW) {
+            client.inCallByEmployeeId = null;
+            client.inCallByName = null;
+            client.callStartedAt = null;
+            this.clientsGateway.emitCallEnded(client.id);
+        }
+
         const saved = await this.clientRepo.save(client);
+
+        this.clientsGateway.emitClientUpdate(client.id, saved);
 
         await this.activityRepo.save({
             actionType: 'CLIENT_UPDATED',
             details: { clientId: saved.id, fullName: saved.fullName, updates: Object.keys(dto) }
+        });
+
+        return saved;
+    }
+
+    async startCall(id: string, user: AuthenticatedUser): Promise<Client> {
+        const client = await this.findOne(id);
+
+        if (client.inCallByEmployeeId && client.inCallByEmployeeId !== user.id) {
+            throw new BadRequestException(`Ushbu mijoz bilan xozirda ${client.inCallByName} gaplashmoqda.`);
+        }
+
+        client.inCallByEmployeeId = user.id;
+        client.inCallByName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.phoneNumber;
+        client.callStartedAt = new Date();
+
+        const saved = await this.clientRepo.save(client);
+
+        this.clientsGateway.emitCallStarted(client.id, user.id, client.inCallByName);
+
+        await this.activityRepo.save({
+            actionType: 'CLIENT_CALL_STARTED',
+            userId: user.id || undefined,
+            details: { clientId: saved.id, fullName: saved.fullName }
         });
 
         return saved;
@@ -132,7 +174,7 @@ export class ClientsService {
             if (client.saleTotalAmount && client.saleStatus !== SaleStatus.FULL) {
                 const allPayments = await manager.find(Payment, { where: { clientId } });
                 const totalPaid = allPayments.reduce((sum, p) => sum + p.amount, 0);
-                
+
                 if (totalPaid >= client.saleTotalAmount) {
                     client.saleStatus = SaleStatus.FULL;
                     client.soldAt = new Date();
@@ -154,7 +196,7 @@ export class ClientsService {
         });
     }
 
-    async setSale(clientId: string, dto: SetSaleDto): Promise<Client> {
+    async setSale(clientId: string, dto: SetSaleDto, user?: AuthenticatedUser): Promise<Client> {
         const client = await this.findOne(clientId);
         client.saleStatus = dto.status;
         if (dto.totalAmount !== undefined) client.saleTotalAmount = dto.totalAmount;
@@ -164,8 +206,21 @@ export class ClientsService {
         if (dto.status !== SaleStatus.NONE) {
             client.soldAt = new Date();
             client.stage = ClientStage.SOLD;
+            client.inCallByEmployeeId = null;
+            client.inCallByName = null;
+            client.callStartedAt = null;
+            if (user) {
+                client.soldByName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.phoneNumber;
+            }
         }
+
         const saved = await this.clientRepo.save(client);
+
+        this.clientsGateway.emitClientUpdate(client.id, saved);
+
+        if (dto.paidAmount && dto.paidAmount > 0 && user) {
+            await this.addPayment(clientId, { amount: dto.paidAmount }, user);
+        }
 
         await this.activityRepo.save({
             actionType: 'CLIENT_SALE_UPDATED',
@@ -173,5 +228,47 @@ export class ClientsService {
         });
 
         return saved;
+    }
+
+    @Cron(CronExpression.EVERY_MINUTE)
+    async handleReminders() {
+        const now = new Date();
+
+        // 1. Call Reminders (remindAt)
+        const callReminders = await this.clientRepo.find({
+            where: {
+                remindAt: LessThanOrEqual(now),
+            }
+        });
+
+        for (const client of callReminders) {
+            this.clientsGateway.emitReminder(client.id, client.fullName);
+            client.remindAt = null;
+            await this.clientRepo.save(client);
+        }
+
+        // 2. Payment Reminders (nextPaymentAt)
+        // Notify every 10 minutes if unpaid
+        const tenMinsAgo = new Date(now.getTime() - 10 * 60 * 1000);
+        const paymentReminders = await this.clientRepo.find({
+            where: [
+                {
+                    saleStatus: SaleStatus.PARTIAL,
+                    nextPaymentAt: LessThanOrEqual(now),
+                    lastPaymentNotifiedAt: IsNull()
+                },
+                {
+                    saleStatus: SaleStatus.PARTIAL,
+                    nextPaymentAt: LessThanOrEqual(now),
+                    lastPaymentNotifiedAt: LessThanOrEqual(tenMinsAgo) // Notified > 10 mins ago
+                }
+            ]
+        });
+
+        for (const client of paymentReminders) {
+            this.clientsGateway.emitPaymentReminder(client.id, client.fullName);
+            client.lastPaymentNotifiedAt = now;
+            await this.clientRepo.save(client);
+        }
     }
 }

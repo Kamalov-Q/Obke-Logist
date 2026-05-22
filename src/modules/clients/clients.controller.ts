@@ -61,6 +61,16 @@ export class ClientsController {
         await this.clientsService.remove(id);
     }
 
+    @Post(':id/call/start')
+    @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
+    @ApiOperation({ summary: 'Start calling a client (locks client down)' })
+    startCall(
+        @Param('id') id: string,
+        @CurrentUser() user: AuthenticatedUser,
+    ) {
+        return this.clientsService.startCall(id, user as AuthenticatedUser);
+    }
+
     @Post(':id/notes')
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @ApiOperation({ summary: 'Add a note to client' })
@@ -84,9 +94,13 @@ export class ClientsController {
     }
 
     @Patch(':id/sale')
-    @Roles(UserRole.DIRECTOR)
-    @ApiOperation({ summary: 'Set sale status (Director only)' })
-    setSale(@Param('id') id: string, @Body() dto: SetSaleDto) {
-        return this.clientsService.setSale(id, dto);
+    @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
+    @ApiOperation({ summary: 'Set sale status (Director and Employee)' })
+    setSale(
+        @Param('id') id: string,
+        @Body() dto: SetSaleDto,
+        @CurrentUser() user: AuthenticatedUser
+    ) {
+        return this.clientsService.setSale(id, dto, user as AuthenticatedUser);
     }
 }

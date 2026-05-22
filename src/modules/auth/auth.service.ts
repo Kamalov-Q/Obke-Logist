@@ -12,7 +12,7 @@ export class AuthService {
         private readonly jwtSvc: JwtService
     ) { }
 
-    async login(dto: LoginDto): Promise<{ accessToken: string }> {
+    async login(dto: LoginDto): Promise<{ accessToken: string, refreshToken: string }> {
         const user = await this.usersSvc.findByPhoneWithPassword(dto.phoneNumber);
 
         if (!user) {
@@ -35,9 +35,69 @@ export class AuthService {
             role: user.role
         }
 
+        const [accessToken, refreshToken] = await Promise.all([
+            this.jwtSvc.signAsync(payload),
+            this.jwtSvc.signAsync(payload, { expiresIn: '7d' }) // Refresh token lasts longer
+        ]);
+
+        await this.usersSvc.updateRefreshToken(user.id, refreshToken);
+
         return {
-            accessToken: await this.jwtSvc.signAsync(payload)
+            accessToken,
+            refreshToken
         }
+    }
+
+    async refresh(dto: { refreshToken: string }): Promise<{ accessToken: string, refreshToken: string }> {
+        try {
+            const payload = await this.jwtSvc.verifyAsync<JwtPayload>(dto.refreshToken);
+            const user = await this.usersSvc.findById(payload.sub);
+
+            if (!user || !user.isActive) {
+                throw new UnauthorizedException('User not found or inactive');
+            }
+
+            // Verify stored refresh token hash
+            const dbUser = await this.usersSvc.findByPhoneWithPassword(user.phoneNumber);
+            // We need to fetch it with select: true if we want to compare, 
+            // but queryBuilder.addSelect('user.refreshToken') is better.
+            // Let's adjust UsersService or use queryBuilder here.
+            
+            const userWithToken = await this.usersSvc.findByIdWithRefreshToken(payload.sub);
+
+            if (!userWithToken || !userWithToken.refreshToken) {
+                throw new UnauthorizedException('Session expired');
+            }
+
+            const isMatch = await bcrypt.compare(dto.refreshToken, userWithToken.refreshToken);
+            if (!isMatch) {
+                throw new UnauthorizedException('Invalid session');
+            }
+
+            const newPayload: JwtPayload = {
+                sub: user.id,
+                phoneNumber: user.phoneNumber,
+                role: user.role
+            };
+
+            const [accessToken, newRefreshToken] = await Promise.all([
+                this.jwtSvc.signAsync(newPayload),
+                this.jwtSvc.signAsync(newPayload, { expiresIn: '7d' })
+            ]);
+
+            await this.usersSvc.updateRefreshToken(user.id, newRefreshToken);
+
+            return {
+                accessToken,
+                refreshToken: newRefreshToken
+            };
+        } catch (e) {
+            throw new UnauthorizedException('Invalid or expired refresh token');
+        }
+    }
+
+    async logout(userId: string): Promise<void> {
+        await this.usersSvc.updateRefreshToken(userId, null);
     }
 
 }

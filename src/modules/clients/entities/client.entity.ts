@@ -46,6 +46,21 @@ export class Client {
     @Column({ type: 'timestamp', nullable: true })
     remindAt: Date | null;
 
+    @Column({ type: 'varchar', nullable: true })
+    soldByName: string | null;
+
+    @Column({ type: 'timestamp', nullable: true })
+    lastPaymentNotifiedAt: Date | null;
+
+    @Column({ type: 'uuid', nullable: true })
+    inCallByEmployeeId: string | null;
+
+    @Column({ type: 'varchar', nullable: true })
+    inCallByName: string | null;
+
+    @Column({ type: 'timestamp', nullable: true })
+    callStartedAt: Date | null;
+
     @OneToMany(() => ClientNote, (note) => note.client, { cascade: true })
     notes: ClientNote[];
 

@@ -36,12 +36,28 @@ export class UsersService {
         });
     }
 
+    findByIdWithRefreshToken(id: string): Promise<User | null> {
+        return this.userRepo
+            .createQueryBuilder('user')
+            .addSelect('user.refreshToken')
+            .where('user.id = :id', { id })
+            .getOne();
+    }
+
     findByPhoneWithPassword(phoneNumber: string): Promise<User | null> {
         return this.userRepo
             .createQueryBuilder('user')
             .addSelect('user.password')
             .where('user.phoneNumber = :phoneNumber', { phoneNumber })
             .getOne();
+    }
+
+    async updateRefreshToken(userId: string, refreshToken: string | null): Promise<void> {
+        let hash: string | null = null;
+        if (refreshToken) {
+            hash = await bcrypt.hash(refreshToken, 10);
+        }
+        await this.userRepo.update(userId, { refreshToken: hash });
     }
 
     async createEmployee(

@@ -28,6 +28,11 @@ export class UpdateClientDto {
     @IsOptional()
     @IsEnum(ClientStage)
     stage?: ClientStage;
+
+    @ApiProperty({ required: false, example: '2026-06-01T00:00:00.000Z' })
+    @IsOptional()
+    @IsString()
+    remindAt?: string;
 }
 
 export class AddNoteDto {
@@ -59,4 +64,10 @@ export class SetSaleDto {
     @IsOptional()
     @IsString()
     nextPaymentAt?: string;
+
+    @ApiProperty({ required: false, example: 100000 })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    paidAmount?: number;
 }
