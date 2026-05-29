@@ -15,11 +15,11 @@ import { CheckModuleAccess } from '../../common/decorators/module-access.decorat
 @ApiTags('Departments')
 @ApiBearerAuth()
 @Controller('departments')
-@UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
-@CheckModuleAccess('departments')
 export class DepartmentsController {
     constructor(private readonly departmentsService: DepartmentsService) { }
 
+    @UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
+    @CheckModuleAccess('departments')
     @Post()
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @ApiOperation({ summary: 'Create department' })
@@ -27,6 +27,8 @@ export class DepartmentsController {
         return this.departmentsService.create(dto);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
+    @CheckModuleAccess('departments')
     @Get()
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @ApiOperation({ summary: 'List all departments' })
@@ -34,6 +36,8 @@ export class DepartmentsController {
         return this.departmentsService.findAll();
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
+    @CheckModuleAccess('departments')
     @Get(':id')
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @ApiOperation({ summary: 'Get department with clients' })
@@ -41,6 +45,8 @@ export class DepartmentsController {
         return this.departmentsService.findOne(id);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
+    @CheckModuleAccess('departments')
     @Patch(':id')
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @ApiOperation({ summary: 'Update department name' })
@@ -48,6 +54,8 @@ export class DepartmentsController {
         return this.departmentsService.update(id, dto);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
+    @CheckModuleAccess('departments')
     @Patch(':id/archive')
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @ApiOperation({ summary: 'Toggle archive status' })
@@ -55,6 +63,8 @@ export class DepartmentsController {
         return this.departmentsService.toggleArchive(id);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
+    @CheckModuleAccess('departments')
     @Delete(':id')
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @HttpCode(HttpStatus.NO_CONTENT)

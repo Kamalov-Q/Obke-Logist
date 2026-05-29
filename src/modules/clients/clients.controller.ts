@@ -19,7 +19,6 @@ import { CheckModuleAccess } from '../../common/decorators/module-access.decorat
 @ApiBearerAuth()
 @Controller('clients')
 @UseGuards(JwtAuthGuard, RolesGuard, UserActiveGuard, ModuleAccessGuard)
-@CheckModuleAccess('departments')
 export class ClientsController {
     constructor(private readonly clientsService: ClientsService) { }
 

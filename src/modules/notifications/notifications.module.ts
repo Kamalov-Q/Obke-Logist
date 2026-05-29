@@ -7,10 +7,12 @@ import { PushSubscription } from '../users/entities/push-subscription.entity';
 import { NotificationGateway } from './gateways/notification.gateway';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { User } from '../users/entities/user.entity';
+import { TelegramModule } from '../telegram/telegram.module';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Notification, PushSubscription]),
+        TypeOrmModule.forFeature([Notification, PushSubscription, User]),
         JwtModule.registerAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
@@ -18,6 +20,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
                 secret: configSvc.getOrThrow<string>('JWT_SECRET'),
             }),
         }),
+        TelegramModule,
     ],
     controllers: [NotificationsController],
     providers: [NotificationsService, NotificationGateway],

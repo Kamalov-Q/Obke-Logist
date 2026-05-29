@@ -15,6 +15,7 @@ import { ArchiveModule } from './modules/archive/archive.module';
 import { FormsModule } from './modules/forms/forms.module';
 import { HealthModule } from './modules/health/health.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { TelegramModule } from './modules/telegram/telegram.module';
 
 @Module({
   imports: [ConfigModule.forRoot({
@@ -54,6 +55,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     FormsModule,
     HealthModule,
     NotificationsModule,
+    TelegramModule,
   ServeStaticModule.forRoot({
     rootPath: join(process.cwd(), 'uploads'),
     serveRoot: '/uploads',

@@ -6,6 +6,8 @@ import { PushSubscription as PushSubscriptionEntity } from '../users/entities/pu
 import { NotificationGateway } from './gateways/notification.gateway';
 import * as webpush from 'web-push';
 import { ConfigService } from '@nestjs/config';
+import { TelegramService } from '../telegram/telegram.service';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class NotificationsService {
@@ -16,8 +18,11 @@ export class NotificationsService {
         private readonly notificationRepo: Repository<Notification>,
         @InjectRepository(PushSubscriptionEntity)
         private readonly pushRepo: Repository<PushSubscriptionEntity>,
+        @InjectRepository(User)
+        private readonly userRepo: Repository<User>,
         private readonly gateway: NotificationGateway,
         private readonly configService: ConfigService,
+        private readonly telegramService: TelegramService,
     ) {
         const publicVapidKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
         const privateVapidKey = this.configService.get<string>('VAPID_PRIVATE_KEY');
@@ -81,10 +86,6 @@ export class NotificationsService {
         const saved = await this.notificationRepo.save(notification);
 
         // Emit via Socket.io
-        // (Wait, we should ideally use the existing gateway methods or create a generic one)
-        // For now, let's just use the server if accessible, or call gateway methods.
-        // The current gateway has specific methods like emitTaskCreated.
-        // We might want to add a generic emitNotification method.
         this.gateway.server.to(userId).emit('notification', saved);
 
         // Send Web Push
@@ -94,7 +95,21 @@ export class NotificationsService {
             data: { url: '/notifications' }
         });
 
+        // Send Telegram Notification if linked
+        this.sendTelegram(userId, message);
+
         return saved;
+    }
+
+    private async sendTelegram(userId: string, message: string) {
+        try {
+            const user = await this.userRepo.findOne({ where: { id: userId } });
+            if (user && user.phoneNumber) {
+                await this.telegramService.sendToEmployee(user.phoneNumber, `🔔 <b>Yangi bildirishnoma:</b>\n\n${message}`);
+            }
+        } catch (err) {
+            this.logger.error(`Failed to send Telegram notification to user ${userId}: ${err.message}`);
+        }
     }
 
     private async sendWebPush(userId: string, payload: any) {
