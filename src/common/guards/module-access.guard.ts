@@ -29,11 +29,15 @@ export class ModuleAccessGuard implements CanActivate {
     }
 
     if (module === 'departments' && user.canAccessDepartments === false) {
-      throw new ForbiddenException("Sizga ushbu bo'limga kirishga ruxsat berilmagan.");
+      if (request.method !== 'GET') {
+        throw new ForbiddenException("Sizga ushbu bo'limga kirishga ruxsat berilmagan.");
+      }
     }
 
     if (module === 'forms' && user.canAccessForms === false) {
-      throw new ForbiddenException("Sizga ushbu formaga kirishga ruxsat berilmagan.");
+      if (request.method !== 'GET') {
+        throw new ForbiddenException("Sizga ushbu formaga kirishga ruxsat berilmagan.");
+      }
     }
 
     return true;
