@@ -4,7 +4,7 @@ import { IsNotEmpty, IsPhoneNumber, IsString, MinLength } from "class-validator"
 export class ForgotPasswordDto {
     @ApiProperty({ example: '+998901234567' })
     @IsNotEmpty()
-    @IsPhoneNumber('UZ')
+    @IsString()
     phoneNumber: string;
 
     @ApiProperty({ example: '1234' })

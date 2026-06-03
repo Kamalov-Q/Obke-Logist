@@ -28,4 +28,13 @@ export class TelegramController {
     await this.telegramService.sendMessage(dto.telegramIds, message);
     return { success: true };
   }
+
+  @Post('client-message')
+  @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
+  @ApiOperation({ summary: 'Send message to client and link Telegram ID' })
+  async sendToClient(@Body() dto: { clientId: string; telegramId: string; description: string; link?: string }) {
+    const message = `<b>${dto.description}</b>${dto.link ? `\n\n<a href="${dto.link}">Havola: ${dto.link}</a>` : ''}`;
+    await this.telegramService.sendClientMessage(dto.clientId, dto.telegramId, message);
+    return { success: true };
+  }
 }

@@ -51,4 +51,11 @@ export class AttendanceController {
     getEmployeeHistory(@Param('id') id: string) {
         return this.attendanceSvc.getHistory(id);
     }
+
+    @Post('backfill')
+    @Roles(UserRole.DIRECTOR)
+    @ApiOperation({ summary: 'Backfill missing attendance records (Director only)' })
+    backfill(@Query('days') days?: number) {
+        return this.attendanceSvc.backfillAttendance(days || 30);
+    }
 }

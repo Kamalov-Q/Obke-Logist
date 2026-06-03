@@ -231,15 +231,18 @@ export class AttendanceService {
     }
 
     /**
-     * Mark ABSENT for all active employees who have no attendance record today.
+     * Mark ABSENT for all active employees who have no attendance record for a specific date.
      */
-    async markAbsentAll(): Promise<void> {
-        const date = this.getTodayStr();
+    async markAbsentAll(specificDate?: string): Promise<void> {
+        const date = specificDate || this.getTodayStr();
 
         // Get all active employees
         const employees = await this.userRepo.find({
             where: { role: UserRole.EMPLOYEE, isActive: true },
         });
+
+        const absentRecs: Attendance[] = [];
+        const logs: any[] = [];
 
         for (const emp of employees) {
             const existing = await this.attendanceRepo.findOne({
@@ -247,26 +250,45 @@ export class AttendanceService {
             });
 
             if (!existing) {
-                const absent = this.attendanceRepo.create({
+                absentRecs.push(this.attendanceRepo.create({
                     employeeId: emp.id,
                     date,
-                    checkInAt: null,
-                    checkOutAt: null,
-                    photo: null,
-                    checkOutPhoto: null,
                     status: AttendanceStatus.ABSENT,
-                });
-                await this.attendanceRepo.save(absent);
+                }));
 
-                await this.activityRepo.save({
+                logs.push({
                     userId: emp.id,
                     actionType: 'ATTENDANCE_ABSENT',
-                    details: { date, note: 'Sistema tomonidan 20:00 da kelmagan deb belgilandi' }
+                    details: { date, note: `Sistema tomonidan ${specificDate ? 'backfill orqali' : 'avtomatik'} kelmagan deb belgilandi` }
                 });
-
-                this.logger.log(`Marked ${emp.firstName} ${emp.lastName} as ABSENT for ${date}`);
             }
         }
+
+        if (absentRecs.length > 0) {
+            await this.attendanceRepo.save(absentRecs);
+            await this.activityRepo.save(logs);
+            this.logger.log(`Marked ${absentRecs.length} employee(s) as ABSENT for ${date}`);
+        }
+    }
+
+    /**
+     * Backfill missing attendance records for the last N days.
+     */
+    async backfillAttendance(days: number = 30): Promise<void> {
+        this.logger.log(`Starting attendance backfill for the last ${days} days...`);
+        const today = new Date();
+        
+        for (let i = 1; i <= days; i++) {
+            const date = new Date(today);
+            date.setDate(today.getDate() - i);
+            const dateStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+            
+            // Skip weekends if needed? Or just mark absent?
+            // Usually, if it's a workday, they should have a record.
+            // Let's just backfill all days and let the director see the gaps as ABSENT.
+            await this.markAbsentAll(dateStr);
+        }
+        this.logger.log('Attendance backfill complete');
     }
 
     find(query: { employeeId?: string; date?: string }) {

@@ -73,6 +73,9 @@ export class Client {
     @Column({ type: 'timestamp', nullable: true })
     callStartedAt: Date | null;
 
+    @Column({ type: 'varchar', nullable: true })
+    telegramId: string | null;
+
     @OneToMany(() => ClientNote, (note) => note.client, { cascade: true })
     notes: ClientNote[];
 

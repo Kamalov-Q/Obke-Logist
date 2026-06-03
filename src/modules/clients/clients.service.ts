@@ -16,6 +16,7 @@ import { NotificationType } from '../notifications/enums/notification-type.enum'
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LessThanOrEqual, IsNull } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
+import { TelegramService } from '../telegram/telegram.service';
 
 @Injectable()
 export class ClientsService {
@@ -44,6 +45,8 @@ export class ClientsService {
 
         private readonly notificationsService: NotificationsService,
 
+        private readonly telegramService: TelegramService,
+
         private readonly dataSource: DataSource,
     ) { }
 
@@ -69,15 +72,15 @@ export class ClientsService {
             details: { clientId: saved.id, fullName: saved.fullName }
         });
 
-        // Notify ALL users (async)
+        // Notify ALL users (async batch)
         this.getAllUserIds().then(userIds => {
-            for (const userId of userIds) {
-                this.notificationsService.createNotification(
-                    userId,
+            if (userIds.length > 0) {
+                this.notificationsService.createBatchNotifications(
+                    userIds,
                     NotificationType.CLIENT_REMINDER,
                     `🆕 Yangi mijoz: ${saved.fullName}. Uni "Yangi" bo'limidan ko'rishingiz mumkin.`,
                     { clientId: saved.id }
-                ).catch(err => console.error('Notification failed', err));
+                ).catch(err => this.logger.error('Batch notification failed', err));
             }
         });
 
@@ -226,15 +229,15 @@ export class ClientsService {
                 details: { clientId, amount: payment.amount }
             });
 
-            // Notify directors (async)
+            // Notify directors (async batch)
             this.getDirectorIds().then(directorIds => {
-                for (const directorId of directorIds) {
-                    this.notificationsService.createNotification(
-                        directorId,
+                if (directorIds.length > 0) {
+                    this.notificationsService.createBatchNotifications(
+                        directorIds,
                         NotificationType.CLIENT_PAYMENT,
                         `💰 "${client.fullName}" uchun ${payment.amount} so'm to'lov qabul qilindi.`,
                         { clientId, paymentId: saved.id }
-                    ).catch(err => console.error('Notification failed', err));
+                    ).catch(err => this.logger.error('Batch payment notification failed', err));
                 }
             });
 
@@ -315,9 +318,9 @@ export class ClientsService {
             details: { clientId, status: saved.saleStatus, totalAmount: saved.saleTotalAmount }
         });
 
-        // Notify directors (async)
+        // Notify directors (async batch)
         this.getDirectorIds().then(directorIds => {
-            for (const directorId of directorIds) {
+            if (directorIds.length > 0) {
                 const statusLabels: Record<string, string> = {
                     full: "to'liq",
                     partial: "bo'lib to'lash (nasiya)",
@@ -325,12 +328,12 @@ export class ClientsService {
                 };
                 const statusLabel = statusLabels[saved.saleStatus] || saved.saleStatus;
 
-                this.notificationsService.createNotification(
-                    directorId,
+                this.notificationsService.createBatchNotifications(
+                    directorIds,
                     NotificationType.CLIENT_PAYMENT,
                     `💳 Mijoz "${saved.fullName}" sotuv holati yangilandi: ${statusLabel}`,
                     { clientId, status: saved.saleStatus }
-                ).catch(err => console.error('Notification failed', err));
+                ).catch(err => this.logger.error('Batch sale notification failed', err));
             }
         });
 
@@ -437,6 +440,16 @@ export class ClientsService {
                         );
                     } catch (err) {
                         this.logger.error(`Failed to notify seller ${client.soldByEmployeeId} for payment reminder: ${err.message}`);
+                    }
+                }
+
+                // 2.1 Notify the CLIENT via Telegram if linked
+                if (client.telegramId) {
+                    try {
+                        const clientMessage = `🔔 <b>Hurmatli ${client.fullName},</b>\n\n"Tourland" dan to'lov muddati kelganini eslatib o'tamiz. Iltimos, o'z vaqtida amalga oshiring.`;
+                        await this.telegramService.sendMessage([client.telegramId], clientMessage);
+                    } catch (err) {
+                        this.logger.error(`Failed to send automated Telegram reminder to client ${client.id}: ${err.message}`);
                     }
                 }
 

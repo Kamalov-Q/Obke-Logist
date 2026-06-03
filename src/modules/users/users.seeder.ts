@@ -2,19 +2,17 @@ import { Injectable, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { User, UserRole } from "./entities/user.entity";
 import { Repository } from "typeorm";
-import { ConfigService } from "@nestjs/config";
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersSeeder implements OnModuleInit {
     constructor(
         @InjectRepository(User)
-        private readonly userRepo: Repository<User>,
-        private readonly config: ConfigService
+        private readonly userRepo: Repository<User>
     ) { }
 
     async onModuleInit() {
-        const phoneNumber = '998931004027';
+        const phoneNumber = '+998931004027';
 
         const exists = await this.userRepo.findOne({
             where: { phoneNumber }
@@ -34,6 +32,4 @@ export class UsersSeeder implements OnModuleInit {
         await this.userRepo.save(director);
 
     }
-
-
 }

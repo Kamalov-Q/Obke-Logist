@@ -15,8 +15,13 @@ export class AuthService {
         private readonly configSvc: ConfigService
     ) { }
 
+    private cleanPhone(phone: string): string {
+        return phone.replace(/\s+/g, '');
+    }
+
     async login(dto: LoginDto): Promise<{ accessToken: string, refreshToken: string }> {
-        const user = await this.usersSvc.findByPhoneWithPassword(dto.phoneNumber);
+        const cleanedPhone = this.cleanPhone(dto.phoneNumber);
+        const user = await this.usersSvc.findByPhoneWithPassword(cleanedPhone);
 
         if (!user) {
             throw new UnauthorizedException('Invalid phone number or password');
@@ -63,11 +68,11 @@ export class AuthService {
             }
 
             // Verify stored refresh token hash
-            const dbUser = await this.usersSvc.findByPhoneWithPassword(user.phoneNumber);
+            const dbUser = await this.usersSvc.findByPhoneWithPassword(this.cleanPhone(user.phoneNumber));
             // We need to fetch it with select: true if we want to compare, 
             // but queryBuilder.addSelect('user.refreshToken') is better.
             // Let's adjust UsersService or use queryBuilder here.
-            
+
             const userWithToken = await this.usersSvc.findByIdWithRefreshToken(payload.sub);
 
             if (!userWithToken || !userWithToken.refreshToken) {
@@ -104,7 +109,8 @@ export class AuthService {
     }
 
     async verifyPincode(phoneNumber: string, pincode: string): Promise<{ valid: boolean }> {
-        const user = await this.usersSvc.findByPhoneWithPassword(phoneNumber);
+        const cleanedPhone = this.cleanPhone(phoneNumber);
+        const user = await this.usersSvc.findByPhoneWithPassword(cleanedPhone);
         if (!user || !user.isActive) {
             return { valid: false }; // Don't leak user existence directly via explicit error if possible, but valid: false is fine
         }
@@ -122,8 +128,9 @@ export class AuthService {
         if (!check.valid) {
             throw new UnauthorizedException('Invalid phone number or pincode');
         }
-        
-        await this.usersSvc.resetPasswordByPhone(phoneNumber, newPassword);
+
+        const cleanedPhone = this.cleanPhone(phoneNumber);
+        await this.usersSvc.resetPasswordByPhone(cleanedPhone, newPassword);
         return { message: 'Password reset successfully' };
     }
 

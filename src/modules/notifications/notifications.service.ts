@@ -4,10 +4,10 @@ import { Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { PushSubscription as PushSubscriptionEntity } from '../users/entities/push-subscription.entity';
 import { NotificationGateway } from './gateways/notification.gateway';
-import * as webpush from 'web-push';
 import { ConfigService } from '@nestjs/config';
-import { TelegramService } from '../telegram/telegram.service';
 import { User } from '../users/entities/user.entity';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 @Injectable()
 export class NotificationsService {
@@ -22,18 +22,9 @@ export class NotificationsService {
         private readonly userRepo: Repository<User>,
         private readonly gateway: NotificationGateway,
         private readonly configService: ConfigService,
-        private readonly telegramService: TelegramService,
-    ) {
-        const publicVapidKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
-        const privateVapidKey = this.configService.get<string>('VAPID_PRIVATE_KEY');
-        const email = this.configService.get<string>('VAPID_EMAIL', 'admin@example.com');
-
-        if (publicVapidKey && privateVapidKey) {
-            webpush.setVapidDetails(`mailto:${email}`, publicVapidKey, privateVapidKey);
-        } else {
-            this.logger.warn('VAPID keys not set. Web Push will not work.');
-        }
-    }
+        @InjectQueue('notification-queue')
+        private readonly notificationQueue: Queue,
+    ) {}
 
     async getNotifications(userId: string, page: number = 1, limit: number = 20) {
         const [items, total] = await this.notificationRepo.findAndCount({
@@ -89,7 +80,7 @@ export class NotificationsService {
         return hour >= 9 && hour < 22;
     }
 
-    async createNotification(userId: string, type: any, message: string, data?: any, options?: { skipTelegram?: boolean }) {
+    async createNotification(userId: string, type: any, message: string, data?: any, options?: { skipTelegram?: boolean; user?: User }) {
         const notification = this.notificationRepo.create({
             userId,
             type,
@@ -101,65 +92,66 @@ export class NotificationsService {
 
         // Only deliver (Socket, Push, Telegram) if within allowed hours (09:00 - 22:00)
         if (this.isAllowedTime()) {
-            // Emit via Socket.io
+            // Emit via Socket.io (Instant)
             this.gateway.server.to(userId).emit('notification', saved);
 
-            const user = await this.userRepo.findOne({ where: { id: userId } });
-            const redirectUrl = user?.role === 'DIRECTOR' ? '/director/notifications' : '/employee/notifications';
+            // Determine redirect URL
+            const redirectUrl = options?.user?.role === 'DIRECTOR' ? '/director/notifications' : '/employee/notifications';
 
-            // Send Web Push
-            this.sendWebPush(userId, {
-                title: 'Tourland CRM',
-                body: message,
-                data: { url: redirectUrl }
+            // Offload heavy delivery to BullMQ
+            await this.notificationQueue.add('send-delivery', {
+                userId,
+                message,
+                payload: {
+                    title: 'Tourland CRM',
+                    body: message,
+                    data: { url: redirectUrl }
+                },
+                options: {
+                    skipTelegram: options?.skipTelegram
+                }
             });
-
-            // Send Telegram
-            if (!options?.skipTelegram) {
-                this.sendTelegram(userId, message).catch(err => 
-                    this.logger.error(`Immediate Telegram notification failed: ${err.message}`)
-                );
-            }
         }
 
         return saved;
     }
 
-    private async sendTelegram(userId: string, message: string) {
-        try {
-            const user = await this.userRepo.findOne({ where: { id: userId } });
-            if (user) {
-                if (user.telegramId) {
-                    await this.telegramService.sendMessage([user.telegramId], `🔔 <b>Yangi bildirishnoma:</b>\n\n${message}`);
-                } else if (user.phoneNumber) {
-                    await this.telegramService.sendToEmployee(user.phoneNumber, `🔔 <b>Yangi bildirishnoma:</b>\n\n${message}`);
-                }
-            }
-        } catch (err) {
-            this.logger.error(`Failed to send Telegram notification to user ${userId}: ${err.message}`);
-        }
-    }
+    async createBatchNotifications(userIds: string[], type: any, message: string, data?: any, options?: { skipTelegram?: boolean }) {
+        const notifications = userIds.map(userId => this.notificationRepo.create({
+            userId,
+            type,
+            message,
+            isRead: false,
+            data,
+        }));
 
-    private async sendWebPush(userId: string, payload: any) {
-        const subscriptions = await this.pushRepo.find({ where: { userId } });
-        for (const sub of subscriptions) {
-            try {
-                const pushConfig = {
-                    endpoint: sub.endpoint,
-                    keys: {
-                        p256dh: sub.p256dh,
-                        auth: sub.auth,
+        const saved = await this.notificationRepo.save(notifications);
+
+        if (this.isAllowedTime()) {
+            // Batch process delivery jobs
+            const jobs = saved.map(n => ({
+                name: 'send-delivery',
+                data: {
+                    userId: n.userId,
+                    message,
+                    payload: {
+                        title: 'Tourland CRM',
+                        body: message,
+                        data: { url: '/notifications' } // Generic for batch
                     },
-                };
-                await webpush.sendNotification(pushConfig, JSON.stringify(payload));
-            } catch (err) {
-                if (err.statusCode === 410 || err.statusCode === 404) {
-                    this.logger.log(`Removing expired subscription for user ${userId}`);
-                    await this.pushRepo.remove(sub);
-                } else {
-                    this.logger.error(`Error sending web push: ${err.message}`);
-                } 
-            }
+                    options: {
+                        skipTelegram: options?.skipTelegram
+                    }
+                }
+            }));
+            
+            // Emit sockets instantly
+            saved.forEach(n => this.gateway.server.to(n.userId).emit('notification', n));
+
+            // Add all jobs to queue
+            await this.notificationQueue.addBulk(jobs);
         }
+
+        return saved;
     }
 }
