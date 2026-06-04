@@ -76,4 +76,9 @@ export class SetSaleDto {
     @IsNumber()
     @Min(0)
     paidAmount?: number;
+
+    @ApiProperty({ required: false, example: '123456789' })
+    @IsOptional()
+    @IsString()
+    telegramId?: string;
 }

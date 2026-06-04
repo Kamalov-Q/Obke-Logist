@@ -13,10 +13,14 @@ export class NotificationsController {
     @Get()
     getNotifications(
         @Request() req,
-        @Query('page') page?: number,
-        @Query('limit') limit?: number
+        @Query('page') page?: string,
+        @Query('limit') limit?: string
     ) {
-        return this.notificationsService.getNotifications(req.user.id || req.user.sub, page, limit);
+        return this.notificationsService.getNotifications(
+            req.user.id || req.user.sub, 
+            page ? Number(page) : 1, 
+            limit ? Number(limit) : 20
+        );
     }
 
     @Patch(':id/read')

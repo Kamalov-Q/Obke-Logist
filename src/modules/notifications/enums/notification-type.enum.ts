@@ -8,5 +8,6 @@ export enum NotificationType {
     CLIENT_PAYMENT = 'client_payment',
     ATTENDANCE_UPDATE = 'attendance_update',
     FORM_UPDATE = 'form_update',
+    CLIENT_CREATED = 'client_created',
     DEPARTMENT_UPDATE = 'department_update',
 }

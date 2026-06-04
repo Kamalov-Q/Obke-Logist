@@ -90,28 +90,25 @@ export class NotificationsService {
         });
         const saved = await this.notificationRepo.save(notification);
 
-        // Only deliver (Socket, Push, Telegram) if within allowed hours (09:00 - 22:00)
-        if (this.isAllowedTime()) {
-            // Emit via Socket.io (Instant)
-            this.gateway.server.to(userId).emit('notification', saved);
+        // Instant delivery
+        this.gateway.server.to(userId).emit('notification', saved);
 
-            // Determine redirect URL
-            const redirectUrl = options?.user?.role === 'DIRECTOR' ? '/director/notifications' : '/employee/notifications';
+        // Determine redirect URL
+        const redirectUrl = options?.user?.role === 'DIRECTOR' ? '/director/notifications' : '/employee/notifications';
 
-            // Offload heavy delivery to BullMQ
-            await this.notificationQueue.add('send-delivery', {
-                userId,
-                message,
-                payload: {
-                    title: 'Tourland CRM',
-                    body: message,
-                    data: { url: redirectUrl }
-                },
-                options: {
-                    skipTelegram: options?.skipTelegram
-                }
-            });
-        }
+        // Offload heavy delivery to BullMQ
+        await this.notificationQueue.add('send-delivery', {
+            userId,
+            message,
+            payload: {
+                title: 'Tourland CRM',
+                body: message,
+                data: { url: redirectUrl }
+            },
+            options: {
+                skipTelegram: options?.skipTelegram
+            }
+        });
 
         return saved;
     }
@@ -127,30 +124,28 @@ export class NotificationsService {
 
         const saved = await this.notificationRepo.save(notifications);
 
-        if (this.isAllowedTime()) {
-            // Batch process delivery jobs
-            const jobs = saved.map(n => ({
-                name: 'send-delivery',
-                data: {
-                    userId: n.userId,
-                    message,
-                    payload: {
-                        title: 'Tourland CRM',
-                        body: message,
-                        data: { url: '/notifications' } // Generic for batch
-                    },
-                    options: {
-                        skipTelegram: options?.skipTelegram
-                    }
+        // Batch process delivery jobs
+        const jobs = saved.map(n => ({
+            name: 'send-delivery',
+            data: {
+                userId: n.userId,
+                message,
+                payload: {
+                    title: 'Tourland CRM',
+                    body: message,
+                    data: { url: '/notifications' } // Generic for batch
+                },
+                options: {
+                    skipTelegram: options?.skipTelegram
                 }
-            }));
-            
-            // Emit sockets instantly
-            saved.forEach(n => this.gateway.server.to(n.userId).emit('notification', n));
+            }
+        }));
+        
+        // Emit sockets instantly
+        saved.forEach(n => this.gateway.server.to(n.userId).emit('notification', n));
 
-            // Add all jobs to queue
-            await this.notificationQueue.addBulk(jobs);
-        }
+        // Add all jobs to queue
+        await this.notificationQueue.addBulk(jobs);
 
         return saved;
     }

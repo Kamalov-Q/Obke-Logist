@@ -15,7 +15,7 @@ export class UsersSeeder implements OnModuleInit {
         const phoneNumber = '+998931004027';
 
         const exists = await this.userRepo.findOne({
-            where: { phoneNumber }
+            where: { role: UserRole.DIRECTOR }
         });
 
         if (exists) return;

@@ -163,7 +163,8 @@ export class FormsService {
             userId,
             NotificationType.FORM_UPDATE,
             `Yangi ariza kelib tushdi: "${form.title}" (Mijoz: ${savedClient.fullName})`,
-            { clientId: savedClient.id }
+            { clientId: savedClient.id },
+            { skipTelegram: true }
           ).catch(err => console.error('Notification failed', err));
         }
       });

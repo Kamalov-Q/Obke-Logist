@@ -50,7 +50,7 @@ export class ClientsService {
         private readonly dataSource: DataSource,
     ) { }
 
-    async create(dto: CreateClientDto): Promise<Client> {
+    async create(dto: CreateClientDto, user?: AuthenticatedUser): Promise<Client> {
         const department = await this.departmentRepo.findOne({ where: { id: dto.departmentId } });
         if (!department) throw new BadRequestException('Department not found');
 
@@ -72,14 +72,15 @@ export class ClientsService {
             details: { clientId: saved.id, fullName: saved.fullName }
         });
 
-        // Notify ALL users (async batch)
+        // Notify ALL users (async)
         this.getAllUserIds().then(userIds => {
             if (userIds.length > 0) {
                 this.notificationsService.createBatchNotifications(
                     userIds,
-                    NotificationType.CLIENT_REMINDER,
-                    `🆕 Yangi mijoz: ${saved.fullName}. Uni "Yangi" bo'limidan ko'rishingiz mumkin.`,
-                    { clientId: saved.id }
+                    NotificationType.CLIENT_CREATED,
+                    `🆕 Yangi mijoz qo'shildi: ${saved.fullName}. Uni "Yangi" bo'limidan ko'rishingiz mumkin.`,
+                    { clientId: saved.id },
+                    { skipTelegram: true }
                 ).catch(err => this.logger.error('Batch notification failed', err));
             }
         });
@@ -175,6 +176,40 @@ export class ClientsService {
         await this.clientRepo.remove(client);
     }
 
+    async warn(id: string, remindAt: Date, user: AuthenticatedUser): Promise<Client> {
+        const client = await this.findOne(id);
+
+        client.remindAt = remindAt;
+        client.remindEmployeeId = user.id;
+        // Specifically NO stage change to no_answer as per user request
+
+        const saved = await this.clientRepo.save(client);
+
+        this.clientsGateway.emitClientUpdate(client.id, saved);
+
+        await this.activityRepo.save({
+            actionType: 'CLIENT_WARN_SENT',
+            userId: user.id || undefined,
+            details: { clientId: saved.id, fullName: saved.fullName, remindAt }
+        });
+
+        // Notify ALL users (async)
+        this.getAllUserIds().then(userIds => {
+            const otherUserIds = userIds.filter(id => id !== user.id);
+            if (otherUserIds.length > 0) {
+                this.notificationsService.createBatchNotifications(
+                    otherUserIds,
+                    NotificationType.CLIENT_REMINDER,
+                    `⚠️ "${client.fullName}" uchun qayta eslatma belgilandi.`,
+                    { clientId: client.id },
+                    { skipTelegram: true }
+                ).catch(err => this.logger.error('Warn notification failed', err));
+            }
+        });
+
+        return saved;
+    }
+
     async addNote(clientId: string, dto: AddNoteDto, user: AuthenticatedUser): Promise<ClientNote> {
         await this.findOne(clientId); // verify exists
         const note = this.noteRepo.create({
@@ -189,6 +224,21 @@ export class ClientsService {
             userId: user.id || undefined,
             actionType: 'CLIENT_NOTE_ADDED',
             details: { clientId, text: saved.text }
+        });
+
+        // Notify ALL users (async)
+        const client = await this.findOne(clientId);
+        this.getAllUserIds().then(userIds => {
+            const otherUserIds = userIds.filter(id => id !== user.id);
+            if (otherUserIds.length > 0) {
+                this.notificationsService.createBatchNotifications(
+                    otherUserIds,
+                    NotificationType.CLIENT_REMINDER,
+                    `📝 "${client.fullName}" uchun yangi izoh: ${dto.text}`,
+                    { clientId: client.id },
+                    { skipTelegram: true }
+                ).catch(err => this.logger.error('Note notification failed', err));
+            }
         });
 
         return saved;
@@ -229,17 +279,26 @@ export class ClientsService {
                 details: { clientId, amount: payment.amount }
             });
 
-            // Notify directors (async batch)
-            this.getDirectorIds().then(directorIds => {
-                if (directorIds.length > 0) {
+            // Notify ALL users (async)
+            this.getAllUserIds().then(userIds => {
+                const otherUserIds = userIds.filter(id => id !== user.id);
+                if (otherUserIds.length > 0) {
                     this.notificationsService.createBatchNotifications(
-                        directorIds,
+                        otherUserIds,
                         NotificationType.CLIENT_PAYMENT,
                         `💰 "${client.fullName}" uchun ${payment.amount} so'm to'lov qabul qilindi.`,
-                        { clientId, paymentId: saved.id }
+                        { clientId, paymentId: saved.id },
+                        { skipTelegram: true }
                     ).catch(err => this.logger.error('Batch payment notification failed', err));
                 }
             });
+
+            // Notify CLIENT via Telegram (async) if linked
+            if (client.telegramId) {
+                const clientMessage = `💰 <b>To'lov qabul qilindi:</b> ${payment.amount.toLocaleString()} so'm.\n\nKo'p rahmat! 😊`;
+                this.telegramService.sendMessage([client.telegramId], clientMessage)
+                    .catch(err => this.logger.error(`Failed to send payment confirmation to client ${client.id}: ${err.message}`));
+            }
 
             return saved;
         });
@@ -247,7 +306,7 @@ export class ClientsService {
 
     async deletePayment(paymentId: string, user: AuthenticatedUser): Promise<void> {
         return this.dataSource.transaction(async (manager) => {
-            const payment = await manager.findOne(Payment, { 
+            const payment = await manager.findOne(Payment, {
                 where: { id: paymentId },
                 relations: { client: true }
             });
@@ -270,9 +329,9 @@ export class ClientsService {
             }
 
             // Fetch fully populated client for gateway emission
-            const updatedClient = await manager.findOne(Client, { 
-                where: { id: client.id }, 
-                relations: { department: true, notes: true, payments: true } 
+            const updatedClient = await manager.findOne(Client, {
+                where: { id: client.id },
+                relations: { department: true, notes: true, payments: true }
             });
 
             this.clientsGateway.emitClientUpdate(client.id, updatedClient);
@@ -305,9 +364,20 @@ export class ClientsService {
             }
         }
 
+        if (dto.telegramId) {
+            client.telegramId = dto.telegramId;
+        }
+
         const saved = await this.clientRepo.save(client);
 
         this.clientsGateway.emitClientUpdate(client.id, saved);
+
+        // Automated welcome message for partial sales
+        if (dto.status === SaleStatus.PARTIAL && dto.telegramId) {
+            const welcomeMessage = `Assalomu alaykum! Hurmatli mijoz!\n\nQolgan muddat davomida ushbu bot orqali sizga to‘lov sanasi yaqinlashayotgani haqida muntazam ravishda eslatmalar yuborib boriladi.`;
+            this.telegramService.sendMessage([dto.telegramId], welcomeMessage)
+                .catch(err => this.logger.error(`Failed to send welcome message to client ${client.id}: ${err.message}`));
+        }
 
         if (dto.paidAmount && dto.paidAmount > 0 && user) {
             await this.addPayment(clientId, { amount: dto.paidAmount }, user);
@@ -318,9 +388,10 @@ export class ClientsService {
             details: { clientId, status: saved.saleStatus, totalAmount: saved.saleTotalAmount }
         });
 
-        // Notify directors (async batch)
-        this.getDirectorIds().then(directorIds => {
-            if (directorIds.length > 0) {
+        // Notify ALL users (async)
+        this.getAllUserIds().then(userIds => {
+            const otherUserIds = userIds.filter(id => user ? id !== user.id : true);
+            if (otherUserIds.length > 0) {
                 const statusLabels: Record<string, string> = {
                     full: "to'liq",
                     partial: "bo'lib to'lash (nasiya)",
@@ -329,10 +400,11 @@ export class ClientsService {
                 const statusLabel = statusLabels[saved.saleStatus] || saved.saleStatus;
 
                 this.notificationsService.createBatchNotifications(
-                    directorIds,
+                    otherUserIds,
                     NotificationType.CLIENT_PAYMENT,
                     `💳 Mijoz "${saved.fullName}" sotuv holati yangilandi: ${statusLabel}`,
-                    { clientId, status: saved.saleStatus }
+                    { clientId, status: saved.saleStatus },
+                    { skipTelegram: true }
                 ).catch(err => this.logger.error('Batch sale notification failed', err));
             }
         });
@@ -349,9 +421,9 @@ export class ClientsService {
     }
 
     private async getDirectorIds(): Promise<string[]> {
-        const directors = await this.userRepo.find({ 
+        const directors = await this.userRepo.find({
             where: { role: UserRole.DIRECTOR },
-            select: ['id'] 
+            select: ['id']
         });
         return directors.map(d => d.id);
     }
@@ -365,7 +437,6 @@ export class ClientsService {
     @Cron(CronExpression.EVERY_MINUTE)
     async handleReminders() {
         const now = new Date();
-        const canNotify = this.isAllowedTime();
 
         // 1. Call Reminders (remindAt)
         const callReminders = await this.clientRepo.find({
@@ -374,76 +445,70 @@ export class ClientsService {
             }
         });
 
-        for (const client of callReminders) {
-            if (canNotify) {
+        if (callReminders.length > 0) {
+            for (const client of callReminders) {
                 this.clientsGateway.emitReminder(client.id, client.fullName);
-            }
 
-            // Notify the specific employee who set the reminder (createNotification handles its own time guard)
-            const targetEmployeeId = client.remindEmployeeId || client.inCallByEmployeeId;
-            if (targetEmployeeId) {
-                await this.notificationsService.createNotification(
-                    targetEmployeeId,
-                    NotificationType.CLIENT_REMINDER,
-                    `🔔 "${client.fullName}" bilan bog'lanish vaqti keldi. Qayta qo'ng'iroq qiling.`,
-                    { clientId: client.id }
-                );
-            }
+                const message = `🔔 "${client.fullName}" bilan bog'lanish vaqti keldi. Qayta qo'ng'iroq qiling.`;
 
-            client.remindAt = null;
-            client.remindEmployeeId = null; // Clear after notifying
-            await this.clientRepo.save(client);
+                const userIdsToNotify = await this.getAllUserIds();
+                if (userIdsToNotify.length > 0) {
+                    await this.notificationsService.createBatchNotifications(
+                        userIdsToNotify,
+                        NotificationType.CLIENT_REMINDER,
+                        message,
+                        { clientId: client.id },
+                        { skipTelegram: true }
+                    );
+                }
+
+                client.remindAt = null;
+                client.remindEmployeeId = null;
+                await this.clientRepo.save(client);
+            }
         }
 
         // 2. Payment Reminders (nextPaymentAt)
-        // First notification fires 3 hours after overdue; repeats every 3 hours.
-        // Telegram is suppressed — in-app + web push only.
-        const threeHoursAgo = new Date(now.getTime() - 180 * 60 * 1000);
+        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
         const paymentReminders = await this.clientRepo.find({
             where: [
                 {
-                    // First notification: overdue by at least 3 hours, never notified yet
                     saleStatus: SaleStatus.PARTIAL,
-                    nextPaymentAt: LessThanOrEqual(threeHoursAgo),
+                    nextPaymentAt: LessThanOrEqual(now),
                     lastPaymentNotifiedAt: IsNull()
                 },
                 {
-                    // Repeat: last notification was at least 3 hours ago
                     saleStatus: SaleStatus.PARTIAL,
                     nextPaymentAt: LessThanOrEqual(now),
-                    lastPaymentNotifiedAt: LessThanOrEqual(threeHoursAgo)
+                    lastPaymentNotifiedAt: LessThanOrEqual(fiveMinutesAgo)
                 }
             ]
         });
 
         if (paymentReminders.length > 0) {
             for (const client of paymentReminders) {
-                // Broadcast socket event to everyone (still useful for real-time UI)
-                if (canNotify) {
-                    this.clientsGateway.emitPaymentReminder(client.id, client.fullName);
-                }
+                this.clientsGateway.emitPaymentReminder(client.id, client.fullName);
 
                 const isFirstNotification = !client.lastPaymentNotifiedAt;
                 const message = isFirstNotification
                     ? `💰 "${client.fullName}" uchun to'lov muddati keldi.`
                     : `💸 "${client.fullName}" uchun kutilayotgan to'lov hali amalga oshirilmadi.`;
 
-                // Notify ONLY the employee who made the sale (targeted)
-                if (client.soldByEmployeeId) {
+                const userIdsToNotify = await this.getAllUserIds();
+                if (userIdsToNotify.length > 0) {
                     try {
-                        await this.notificationsService.createNotification(
-                            client.soldByEmployeeId,
+                        await this.notificationsService.createBatchNotifications(
+                            userIdsToNotify,
                             NotificationType.CLIENT_PAYMENT,
                             message,
                             { clientId: client.id, clientName: client.fullName },
                             { skipTelegram: true }
                         );
                     } catch (err) {
-                        this.logger.error(`Failed to notify seller ${client.soldByEmployeeId} for payment reminder: ${err.message}`);
+                        this.logger.error(`Failed to notify for payment reminder: ${err.message}`);
                     }
                 }
 
-                // 2.1 Notify the CLIENT via Telegram if linked
                 if (client.telegramId) {
                     try {
                         const clientMessage = `🔔 <b>Hurmatli ${client.fullName},</b>\n\n"Tourland" dan to'lov muddati kelganini eslatib o'tamiz. Iltimos, o'z vaqtida amalga oshiring.`;
@@ -459,7 +524,6 @@ export class ClientsService {
         }
 
         // 3. Persistent "Ko'tarmadi" (No Answer) Reminders
-        // Notify every 60 minutes if still in "no_answer"
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
         const noAnswerReminders = await this.clientRepo.find({
             where: [
@@ -475,28 +539,31 @@ export class ClientsService {
             ]
         });
 
-        for (const client of noAnswerReminders) {
-            const targetEmployeeId = client.remindEmployeeId || client.inCallByEmployeeId || client.soldByEmployeeId;
-            if (targetEmployeeId) {
-                try {
-                    await this.notificationsService.createNotification(
-                        targetEmployeeId,
-                        NotificationType.CLIENT_REMINDER,
-                        `⏳ "${client.fullName}" ko'tarmadi. Iltimos, yana bir bor bog'lanishga harakat qiling.`,
-                        { clientId: client.id, type: 'persistent_reminder' }
-                    );
-                    
-                    // Only update timestamp if notification was successful
+        if (noAnswerReminders.length > 0) {
+            for (const client of noAnswerReminders) {
+                const message = `⏳ "${client.fullName}" ko'tarmadi. Iltimos, yana bir bor bog'lanishga harakat qiling.`;
+
+                const userIdsToNotify = await this.getAllUserIds();
+                if (userIdsToNotify.length > 0) {
+                    try {
+                        await this.notificationsService.createBatchNotifications(
+                            userIdsToNotify,
+                            NotificationType.CLIENT_REMINDER,
+                            message,
+                            { clientId: client.id, type: 'persistent_reminder' },
+                            { skipTelegram: true }
+                        );
+
+                        client.lastCallReminderNotifiedAt = now;
+                        await this.clientRepo.save(client);
+                    } catch (err) {
+                        this.logger.error(`Failed to notify for persistent no-answer reminder: ${err.message}`);
+                    }
+                } else {
+                    this.logger.warn(`No target found for persistent reminder on client ${client.id}`);
                     client.lastCallReminderNotifiedAt = now;
                     await this.clientRepo.save(client);
-                } catch (err) {
-                    this.logger.error(`Failed to notify for persistent no-answer reminder: ${err.message}`);
                 }
-            } else {
-                // If no target, update anyway to prevent query loop, but log it
-                this.logger.warn(`No target employee found for persistent reminder on client ${client.id}`);
-                client.lastCallReminderNotifiedAt = now;
-                await this.clientRepo.save(client);
             }
         }
     }

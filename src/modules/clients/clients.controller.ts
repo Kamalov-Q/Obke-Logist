@@ -13,7 +13,6 @@ import { ClientStage } from './enums/client.enums';
 
 import { UserActiveGuard } from '../../common/guards/user-active.guard';
 import { ModuleAccessGuard } from '../../common/guards/module-access.guard';
-import { CheckModuleAccess } from '../../common/decorators/module-access.decorator';
 
 @ApiTags('Clients')
 @ApiBearerAuth()
@@ -25,8 +24,11 @@ export class ClientsController {
     @Post()
     @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
     @ApiOperation({ summary: 'Create client' })
-    create(@Body() dto: CreateClientDto) {
-        return this.clientsService.create(dto);
+    create(
+        @Body() dto: CreateClientDto,
+        @CurrentUser() user: AuthenticatedUser
+    ) {
+        return this.clientsService.create(dto, user as AuthenticatedUser);
     }
 
     @Get()
@@ -119,5 +121,16 @@ export class ClientsController {
         @CurrentUser() user: AuthenticatedUser
     ) {
         return this.clientsService.setSale(id, dto, user as AuthenticatedUser);
+    }
+
+    @Post(':id/warn')
+    @Roles(UserRole.DIRECTOR, UserRole.EMPLOYEE)
+    @ApiOperation({ summary: 'Send warning/reminder without changing status' })
+    warn(
+        @Param('id') id: string,
+        @Body() dto: { remindAt: string },
+        @CurrentUser() user: AuthenticatedUser
+    ) {
+        return this.clientsService.warn(id, new Date(dto.remindAt), user as AuthenticatedUser);
     }
 }
