@@ -17,6 +17,12 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { LessThanOrEqual, IsNull } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { TelegramService } from '../telegram/telegram.service';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend((utc as any).default || utc);
+dayjs.extend((timezone as any).default || timezone);
 
 @Injectable()
 export class ClientsService {
@@ -429,14 +435,14 @@ export class ClientsService {
     }
 
     private isAllowedTime(): boolean {
-        const now = new Date();
-        const hour = now.getHours();
+        const now = dayjs().tz('Asia/Tashkent');
+        const hour = now.hour();
         return hour >= 9 && hour < 22;
     }
 
-    @Cron(CronExpression.EVERY_MINUTE)
+    @Cron(CronExpression.EVERY_MINUTE, { timeZone: 'Asia/Tashkent' })
     async handleReminders() {
-        const now = new Date();
+        const now = dayjs().tz('Asia/Tashkent').toDate();
 
         // 1. Call Reminders (remindAt)
         const callReminders = await this.clientRepo.find({

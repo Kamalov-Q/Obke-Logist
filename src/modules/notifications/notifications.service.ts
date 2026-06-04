@@ -8,6 +8,12 @@ import { ConfigService } from '@nestjs/config';
 import { User } from '../users/entities/user.entity';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend((utc as any).default || utc);
+dayjs.extend((timezone as any).default || timezone);
 
 @Injectable()
 export class NotificationsService {
@@ -75,8 +81,8 @@ export class NotificationsService {
     }
 
     private isAllowedTime(): boolean {
-        const now = new Date();
-        const hour = now.getHours();
+        const now = dayjs().tz('Asia/Tashkent');
+        const hour = now.hour();
         return hour >= 9 && hour < 22;
     }
 
