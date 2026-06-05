@@ -437,7 +437,7 @@ export class ClientsService {
     private isAllowedTime(): boolean {
         const now = dayjs().tz('Asia/Tashkent');
         const hour = now.hour();
-        return hour >= 9 && hour < 22;
+        return hour >= 9 && hour < 21;
     }
 
     @Cron(CronExpression.EVERY_MINUTE, { timeZone: 'Asia/Tashkent' })
@@ -475,7 +475,7 @@ export class ClientsService {
         }
 
         // 2. Payment Reminders (nextPaymentAt)
-        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+        const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
         const paymentReminders = await this.clientRepo.find({
             where: [
                 {
@@ -486,7 +486,7 @@ export class ClientsService {
                 {
                     saleStatus: SaleStatus.PARTIAL,
                     nextPaymentAt: LessThanOrEqual(now),
-                    lastPaymentNotifiedAt: LessThanOrEqual(fiveMinutesAgo)
+                    lastPaymentNotifiedAt: LessThanOrEqual(fourHoursAgo)
                 }
             ]
         });
@@ -503,6 +503,7 @@ export class ClientsService {
                 const userIdsToNotify = await this.getAllUserIds();
                 if (userIdsToNotify.length > 0) {
                     try {
+                        // Web/Socket notifications always sent every 4 hours
                         await this.notificationsService.createBatchNotifications(
                             userIdsToNotify,
                             NotificationType.CLIENT_PAYMENT,
@@ -515,7 +516,8 @@ export class ClientsService {
                     }
                 }
 
-                if (client.telegramId) {
+                // Telegram notifications for clients: every 4 hours AND only 9 AM - 9 PM
+                if (client.telegramId && this.isAllowedTime()) {
                     try {
                         const clientMessage = `🔔 <b>Hurmatli ${client.fullName},</b>\n\n"Tourland" dan to'lov muddati kelganini eslatib o'tamiz. Iltimos, o'z vaqtida amalga oshiring.`;
                         await this.telegramService.sendMessage([client.telegramId], clientMessage);
