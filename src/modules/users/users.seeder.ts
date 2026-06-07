@@ -12,7 +12,7 @@ export class UsersSeeder implements OnModuleInit {
     ) { }
 
     async onModuleInit() {
-        const phoneNumber = '+998931004027';
+        const phoneNumber = '+998994778241';
 
         const exists = await this.userRepo.findOne({
             where: { role: UserRole.DIRECTOR }
@@ -26,7 +26,7 @@ export class UsersSeeder implements OnModuleInit {
             phoneNumber,
             role: UserRole.DIRECTOR,
             parentId: null,
-            password: await bcrypt.hash('director123', 10)
+            password: await bcrypt.hash('tourland123', 10)
         });
 
         await this.userRepo.save(director);
