@@ -1,98 +1,119 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+            # Logist Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend API for **Tourland** — a CRM and logistics platform for managing tours, clients, employees, warehouse operations, and internal workflows.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Built with [NestJS](https://nestjs.com/), TypeScript, PostgreSQL, and Redis.
 
-## Description
+## Features
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **Authentication** — JWT-based auth with refresh tokens and PIN-based password recovery
+- **Users & roles** — Director and Employee roles with module-level access control
+- **Departments** — Organize teams and structure
+- **Clients** — Client management with notes, payments, and real-time updates via WebSocket
+- **Tours** — Create and manage tour packages
+- **Tasks** — Task templates, recurring instances, status tracking, and scheduled jobs
+- **Attendance** — Employee check-in/check-out with automated cron processing
+- **Warehouses** — Warehouse inventory with kirim (incoming) and chiqim (outgoing) records
+- **Forms** — Dynamic form templates and submissions
+- **Notifications** — In-app notifications, Web Push, and background processing via BullMQ
+- **Telegram** — Bot integration for client messaging and broadcasts
+- **Archive** — Activity logging and audit trail
+- **File uploads** — Static serving from `/uploads`
 
-## Project setup
+## Tech Stack
 
-```bash
-$ npm install
-```
+| Layer | Technology |
+|-------|------------|
+| Framework | NestJS 11 |
+| Language | TypeScript |
+| Database | PostgreSQL (TypeORM) |
+| Cache / queues | Redis, BullMQ |
+| Real-time | Socket.IO with Redis adapter |
+| API docs | Swagger UI at `/docs` |
+| Scheduling | `@nestjs/schedule` |
+| Timezone | Asia/Tashkent (UTC+5) |
 
-## Compile and run the project
+## Prerequisites
 
-```bash
-# development
-$ npm run start
+- Node.js 18+
+- PostgreSQL
+- Redis
 
-# watch mode
-$ npm run start:dev
+## Getting Started
 
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
+### 1. Install dependencies
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
 
-## Deployment
+### 2. Configure environment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Copy the example env file and adjust values for your local setup:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+cp .env.example .env
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+| Variable | Description |
+|----------|-------------|
+| `PORT` | Server port (default: `3001`) |
+| `DATABASE_*` | PostgreSQL connection settings |
+| `JWT_SECRET` | Secret for signing access tokens |
+| `JWT_EXPIRES_IN` | Access token lifetime (e.g. `7D`) |
+| `REDIS_HOST` / `REDIS_PORT` | Redis connection |
+| `RESET_PINCODE` | PIN used for password reset flow |
 
-## Resources
+### 3. Run the server
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+# development (watch mode)
+npm run dev
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+# production build
+npm run build
+npm run prod
+```
 
-## Support
+The API is served under the `/api` prefix.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+- **API:** `http://localhost:3001/api`
+- **Swagger:** `http://localhost:3001/docs`
 
-## Stay in touch
+## Project Structure
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```
+src/
+├── adapters/          # Redis Socket.IO adapter
+├── common/            # Guards, decorators, shared types
+└── modules/
+    ├── auth/          # Login, refresh, password recovery
+    ├── users/         # Employees and directors
+    ├── departments/
+    ├── clients/       # CRM clients, payments, WebSocket gateway
+    ├── tours/
+    ├── tasks/         # Task templates, instances, cron jobs
+    ├── attendance/
+    ├── warehouses/    # Kirim / chiqim logistics
+    ├── forms/
+    ├── notifications/ # Push & real-time notifications
+    ├── telegram/
+    ├── archive/       # Activity logs
+    └── health/
+```
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start in watch mode |
+| `npm run build` | Compile to `dist/` |
+| `npm run prod` | Run compiled production build |
+| `npm run lint` | Lint and auto-fix |
+| `npm run test` | Run unit tests |
+| `npm run test:e2e` | Run end-to-end tests |
+| `npm run test:cov` | Test coverage report |
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+UNLICENSED — private project.
