@@ -17,6 +17,11 @@ export class CreateClientDto {
     @IsString()
     description: string;
 
+    @ApiProperty({ required: false, example: 'OK/8001' })
+    @IsOptional()
+    @IsString()
+    clientCode?: string;
+
     @ApiProperty({ example: 'uuid-of-department' })
     @IsUUID()
     departmentId: string;

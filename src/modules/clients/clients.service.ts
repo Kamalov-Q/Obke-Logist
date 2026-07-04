@@ -66,6 +66,7 @@ export class ClientsService {
             phoneNumber: dto.phoneNumber,
             description: dto.description ?? null,
             departmentId: department.id,
+            clientCode: dto.clientCode ?? null,
         });
 
         const saved = await this.clientRepo.save(client);
@@ -602,6 +603,7 @@ export class ClientsService {
         const NAME_KEYS = ['fullname', 'full_name', 'ism', 'ism familya', 'ism familiya', 'name', 'familya', 'f.i.o', 'fio', 'fish'];
         const PHONE_KEYS = ['phonenumber', 'phone_number', 'phone', 'telefon', 'tel', 'tel raqam', 'raqam', 'number'];
         const DESCRIPTION_KEYS = ['description', 'desc', 'izoh', 'comment', 'note', 'qisqacha', 'malumot', 'ma\'lumot'];
+        const CLIENT_CODE_KEYS = ['clientcode', 'client_code', 'id', 'client id', 'client_id', 'mijoz kodi', 'mijoz_kodi', 'kodi', 'kod'];
 
         const findKey = (row: Record<string, any>, candidates: string[]): string | undefined => {
             const rowKeys = Object.keys(row);
@@ -612,6 +614,7 @@ export class ClientsService {
         const nameKey = findKey(firstRow, NAME_KEYS);
         const phoneKey = findKey(firstRow, PHONE_KEYS);
         const descriptionKey = findKey(firstRow, DESCRIPTION_KEYS);
+        const clientCodeKey = findKey(firstRow, CLIENT_CODE_KEYS);
 
         if (!nameKey) throw new BadRequestException("Column for name not found. Supported headers: " + NAME_KEYS.join(', '));
         if (!phoneKey) throw new BadRequestException("Column for phone not found. Supported headers: " + PHONE_KEYS.join(', '));
@@ -622,6 +625,7 @@ export class ClientsService {
                 fullName: String(row[nameKey] || '').trim(),
                 phoneNumber: String(row[phoneKey] || '').replace(/\s+/g, '').trim(),
                 description: descriptionKey ? String(row[descriptionKey] || '').trim() : null,
+                clientCode: clientCodeKey ? String(row[clientCodeKey] || '').trim() : null,
             }))
             .filter(r => r.fullName && r.phoneNumber);
 
@@ -655,6 +659,7 @@ export class ClientsService {
                     fullName: r.fullName,
                     phoneNumber: r.phoneNumber,
                     description: r.description,
+                    clientCode: r.clientCode || null,
                     departmentId: department.id,
                 }),
             );

@@ -33,6 +33,11 @@ export class UpdateClientDto {
     @IsOptional()
     @IsString()
     remindAt?: string;
+
+    @ApiProperty({ required: false, example: 'OK/8001' })
+    @IsOptional()
+    @IsString()
+    clientCode?: string;
 }
 
 export class AddNoteDto {

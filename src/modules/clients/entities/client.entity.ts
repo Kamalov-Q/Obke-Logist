@@ -73,6 +73,9 @@ export class Client {
     @Column({ type: 'timestamp', nullable: true })
     callStartedAt: Date | null;
 
+    @Column({ type: 'varchar', nullable: true, unique: true })
+    clientCode: string | null;
+
     @Column({ type: 'varchar', nullable: true })
     telegramId: string | null;
 
